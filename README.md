@@ -1,261 +1,217 @@
-# Autonomous-construction-monitoring-drone-using-ROS2-Jazzy-Gazebo-Harmonic-PX4
-Autonomous construction monitoring drone using ROS2 Jazzy + Gazebo Harmonic + PX4, which:  Flies autonomously Creates a 3D map of the building under construction Navigates to selected destinations Monitors the site and captures inspection footage
-Architecture (What you are building)
-Full flow
-PX4 (Flight Controller)
-        ↓
-Gazebo Harmonic Simulation
-        ↓
-ROS2 Jazzy
-        ↓
-Sensors (LiDAR + Camera + IMU)
-        ↓
-3D Mapping (SLAM)
-        ↓
-Navigation / Path Planning
-        ↓
-Selected Destination
-        ↓
-Construction Monitoring
-PHASE 1 — Basic Autonomous Drone (You are here)
-Goal:
+Since your setup is already working, here is the complete one-shot sequence from a fresh start up to a working autonomous drone simulation.
 
-Drone should:
+Terminal 1 — Start Micro XRCE DDS Agent
+MicroXRCEAgent udp4 -p 8888
+
+Expected:
+
+running... port: 8888
+session established
+Terminal 2 — Start PX4 + Gazebo
+source /opt/ros/jazzy/setup.bash
+
+cd ~/PX4-Autopilot
+
+make px4_sitl gz_x500
+
+Wait until Gazebo opens and the drone appears.
+
+You should get:
+
+pxh>
+PX4 Parameters (Only Once)
+
+Inside pxh>:
+
+param set COM_RCL_EXCEPT 4
+param set COM_ARM_WO_GPS 1
+param set NAV_DLL_ACT 0
+param set COM_DISARM_LAND 0
+param save
+
+Verify:
+
+commander arm
+
+Expected:
+
+Armed by external command
+
+Test:
+
+commander takeoff
+
+Land:
+
+commander land
+
+If this works, PX4 is ready.
+
+Terminal 3 — Build ROS2 Workspace
+
+Only required once.
+
+source /opt/ros/jazzy/setup.bash
+
+mkdir -p ~/px4_ros2_ws/src
+
+cd ~/px4_ros2_ws/src
+
+git clone https://github.com/PX4/px4_msgs.git
+
+git clone https://github.com/PX4/px4_ros_com.git
+
+Build:
+
+cd ~/px4_ros2_ws
+
+colcon build
+
+Source:
+
+source install/setup.bash
+
+Verify:
+
+ros2 interface list | grep px4_msgs
+
+You should see many PX4 message types.
+
+Create Drone Control Package
+cd ~/px4_ros2_ws/src
+
+ros2 pkg create --build-type ament_python drone_control
+
+Create scripts folder:
+
+cd drone_control
+
+mkdir scripts
+
+Create control file:
+
+cd scripts
+
+nano offboard_control.py
+
+Paste your working offboard-control code.
+
+Make executable:
+
+chmod +x offboard_control.py
+Edit setup.py
+
+Open:
+
+cd ~/px4_ros2_ws/src/drone_control
+
+nano setup.py
+
+Ensure:
+
+entry_points={
+    'console_scripts': [
+        'offboard_control = drone_control.offboard_control:main',
+    ],
+},
+
+Place offboard_control.py inside:
+
+~/px4_ros2_ws/src/drone_control/drone_control/
+
+not inside scripts/.
+
+This fixes:
+
+ModuleNotFoundError: No module named 'drone_control.scripts'
+Rebuild Workspace
+cd ~/px4_ros2_ws
+
+colcon build --packages-select drone_control
+
+Source:
+
+source install/setup.bash
+Verify PX4 Topics
+ros2 topic list | grep fmu
+
+Expected:
+
+/fmu/out/vehicle_odometry
+/fmu/out/vehicle_status_v4
+/fmu/out/vehicle_local_position_v1
+...
+Run Autonomous Drone
+Terminal 1
+MicroXRCEAgent udp4 -p 8888
+Terminal 2
+source /opt/ros/jazzy/setup.bash
+
+cd ~/PX4-Autopilot
+
+make px4_sitl gz_x500
+Terminal 3
+source /opt/ros/jazzy/setup.bash
+
+source ~/px4_ros2_ws/install/setup.bash
+
+ros2 run drone_control offboard_control
+
+Expected:
 
 Arm
 ↓
 Takeoff
 ↓
-Move to waypoint
+Climb to 5 m
 ↓
 Hover
 ↓
 Land
-What to learn/build
-PX4 OFFBOARD control
-ROS2 publishers/subscribers
-Position setpoints
-Waypoint navigation
-Milestone
-
-Move drone from:
-
-(0,0,-3)
-to
-(5,0,-3)
-to
-(5,5,-3)
-PHASE 2 — Add Sensors for Construction Monitoring
-
-Your drone will need:
-
-Recommended sensors
-
-For simulation first:
-
-Livox Mid-360 or simulated LiDAR
-Intel RealSense D455
-RGB Camera
-IMU (already inside PX4)
-
-For real drone later:
-
-Lightweight LiDAR
-Depth camera
-FPV monitoring camera
-PHASE 3 — 3D Mapping (SLAM)
-
-This is the biggest step.
-
-Instead of 2D mapping like robot navigation, drone uses 3D SLAM.
-
-Best option for you:
-
-ROS2 package:
-
-RTAB-Map ROS2 Documentation
-
-This creates:
-
-3D Point Cloud Map
-
-of entire building structure.
-
-Flow:
-
-LiDAR + Camera + IMU
-        ↓
-RTAB-Map
-        ↓
-3D map generation
-
-Install:
-
-sudo apt install ros-jazzy-rtabmap-ros
-
-Test command:
-
-ros2 launch rtabmap_launch rtabmap.launch.py
-Output:
-
-Drone will build a 3D map of:
-
-Floors
-Pillars
-Walls
-Pipes
-Construction progress
-PHASE 4 — Autonomous Navigation in 3D
-
-Instead of 2D Nav2 robot navigation:
-
-Use:
-
-ROS2 package:
-
-PX4 ROS2 Interface Library
-
-Drone workflow:
-
-User selects destination
-↓
-Planner calculates path
-↓
-Obstacle avoidance
-↓
-Drone flies automatically
-
-Example:
-
-Checkpoint A → B → C
-
-Construction monitoring path.
-
-PHASE 5 — Obstacle Avoidance
-
-Construction site = dangerous environment.
-
-Need:
-
-Steel rods
-Concrete columns
-Workers
-Scaffolding
-Machines
-
-Use:
-
-ROS2 packages
-octomap
-voxel grid
-collision avoidance
-
-Install:
-
-sudo apt install ros-jazzy-octomap*
-
-This creates:
-
-3D Occupancy Map
-
-so drone avoids obstacles.
-
-PHASE 6 — Building Inspection AI
-
-Your client requirement.
-
-Drone should monitor:
-
-Cracks
-Worker activity
-Safety compliance
-Material movement
-Construction progress
-
-Use:
-
-AI models
-YOLO for object detection
-Construction PPE detection
-Progress tracking
-
-Example:
-
-Helmet missing
-↓
-Safety alert
-PHASE 7 — Real Hardware
-
-Recommended flight controller:
-
-Hardware stack
-
-Flight Controller:
-Pixhawk 6C
-
-Companion Computer:
-NVIDIA Jetson Orin Nano
-
-Frame:
-Holybro X500 V2
-
-LiDAR:
-Livox / Hesai lightweight LiDAR
-
-Camera:
-RealSense D455
-
-Communication:
-
-Wi-Fi (short range)
-Telemetry radio
-4G/5G for long distance
-EXACT LEARNING ORDER (Important)
-
-Do not jump directly to SLAM.
-
-Follow this order:
-
-Week 1
-
-✅ Manual takeoff
-✅ Autonomous takeoff
-✅ Move to waypoint
-
-Week 2
-
-✅ Multi waypoint navigation
-✅ Camera feed
-
-Week 3
-
-✅ LiDAR integration
-✅ Point cloud visualization
-
-Week 4
-
-✅ 3D SLAM
-
-Week 5
-
-✅ Obstacle avoidance
-
-Week 6
-
-✅ Autonomous inspection mission
-
-Your immediate next task
-
-Tomorrow do this:
-
-Drone takeoff
-↓
-Move to X,Y coordinate
-↓
-Hover
-↓
-Move to another waypoint
-↓
-Land
-
-Once that works, we’ll start 3D mapping properly.
+For Construction Monitoring
+
+Start depth-drone model:
+
+pkill -f px4
+pkill -f gz
+
+cd ~/PX4-Autopilot
+
+PX4_SIM_MODEL=x500_depth make px4_sitl
+
+Verify sensors:
+
+gz topic -l
+
+You should see:
+
+/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image
+/world/default/model/x500_depth_0/link/lidar_sensor_link/sensor/lidar/scan
+Verify Camera
+gz topic -e -t /world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image
+Verify LiDAR
+gz topic -e -t /world/default/model/x500_depth_0/link/lidar_sensor_link/sensor/lidar/scan
+Final Project Flow
+ROS2 Jazzy
+      ↓
+PX4 SITL
+      ↓
+Gazebo Harmonic
+      ↓
+Autonomous Takeoff
+      ↓
+Waypoint Navigation
+      ↓
+Camera Capture
+      ↓
+LiDAR Scan
+      ↓
+3D Mapping
+      ↓
+Construction Monitoring
+      ↓
+Return Home
+      ↓
+Auto Land
+
+At this point, your foundation is complete. The next development task is waypoint navigation (survey mission), then image capture, then 3D mapping.
