@@ -1,69 +1,92 @@
-# ROS2 Jazzy PX4 Keyboard Controlled Drone Simulation
+# ROS2 Jazzy PX4 Drone Simulation with Keyboard Control
 
 ## Project Overview
 
-This project demonstrates how to control a PX4 drone in Gazebo Harmonic using keyboard commands through ROS2 Jazzy Offboard Control.
+This project demonstrates how to control a PX4 drone in Gazebo Harmonic using ROS2 Jazzy and keyboard commands.
 
-The drone runs inside the PX4 SITL simulator and receives movement commands from a custom ROS2 node. Users can move the drone forward, backward, left, right, up, and down using keyboard inputs.
+The drone is simulated using PX4 SITL (Software In The Loop) and Gazebo Harmonic. A custom ROS2 Python node publishes Offboard Control commands to PX4, allowing the user to move the drone using keyboard inputs.
 
-The communication chain is:
+The project provides a complete workflow for:
 
-Keyboard → ROS2 Node → PX4 Offboard Control → Gazebo Harmonic → Drone Movement
+* PX4 SITL Simulation
+* Gazebo Harmonic Integration
+* ROS2 Jazzy Communication
+* DDS Communication using Micro XRCE DDS
+* Offboard Control
+* Keyboard-Based Drone Teleoperation
 
 ---
 
-# Technologies Used
+## Technologies Used
 
+* Ubuntu 24.04
 * ROS2 Jazzy
 * PX4 Autopilot
 * Gazebo Harmonic
 * Micro XRCE DDS Agent
-* Python
-* Ubuntu 24.04
+* Python 3
 
 ---
 
-# System Architecture
+## System Architecture
 
 Keyboard Input
+
 ↓
-ROS2 Node
+
+ROS2 Keyboard Node
+
 ↓
-Offboard Control Mode
+
+PX4 Offboard Topics
+
 ↓
+
+Micro XRCE DDS Bridge
+
+↓
+
 PX4 SITL
+
 ↓
+
 Gazebo Harmonic
+
 ↓
+
 Drone Movement
 
 ---
 
-# Workspace Structure
+## Project Structure
 
 px4_ros_ws/
 
 ├── src/
 
+│
+
+├── drone_keyboard/
+
 │   ├── drone_keyboard/
 
-│   │   ├── drone_keyboard/
+│   │   ├── **init**.py
 
-│   │   │   ├── **init**.py
+│   │   └── keyboard_control.py
 
-│   │   │   └── keyboard_control.py
+│   │
 
-│   │   ├── package.xml
+│   ├── package.xml
 
-│   │   ├── setup.py
+│   ├── setup.py
 
-│   │   └── setup.cfg
+│   └── setup.cfg
 
 │
 
-│   ├── px4_msgs/
+├── px4_msgs/
 
-│   └── px4_ros_com/
+├── px4_ros_com/
 
 │
 
@@ -75,384 +98,267 @@ px4_ros_ws/
 
 ---
 
-# Step 1: Stop Existing Processes
+## Problem Faced During Development
 
-Before starting a new simulation:
+Initially the drone was not arming and could not take off.
 
-```bash
-pkill -f px4
-pkill -f gz
-pkill -f MicroXRCEAgent
-```
+PX4 displayed:
+
+Preflight Fail: No connection to the GCS
+
+Arming denied: Resolve system health failures first
+
+The issue was caused by PX4 safety checks requiring:
+
+* Ground Control Station connection
+* GPS validation
+* Data-link availability
+
+For simulation-only development these checks were relaxed using:
+
+param set COM_RCL_EXCEPT 4
+
+param set COM_ARM_WO_GPS 1
+
+param set NAV_DLL_ACT 0
+
+param save
+
+Explanation:
+
+COM_RCL_EXCEPT = 4
+
+Allows Offboard mode without requiring RC or Ground Control Station.
+
+COM_ARM_WO_GPS = 1
+
+Allows arming without GPS lock.
+
+NAV_DLL_ACT = 0
+
+Disables datalink-loss failsafe action.
+
+After applying these parameters:
+
+commander check
+
+returned:
+
+Preflight check: OK
+
+and the drone was able to arm and take off successfully.
 
 ---
 
-# Step 2: Start DDS Agent
+## Startup Procedure
 
-Terminal 1
+### Terminal 1
 
-```bash
+Start DDS Agent
+
 MicroXRCEAgent udp4 -p 8888
-```
 
-Expected:
+Expected Output:
 
-```text
 running...
 session established
-```
 
 ---
 
-# Step 3: Start PX4 SITL and Gazebo
+### Terminal 2
 
-Terminal 2
+Start PX4 SITL and Gazebo
 
-```bash
 cd ~/drone_sim/PX4-Autopilot
 
 make px4_sitl gz_x500
-```
 
-Wait for:
+Wait until:
 
 * Gazebo opens
 * Drone appears
-* PX4 console shows:
+* PX4 console displays:
 
-```text
 pxh>
-```
 
 ---
 
-# Step 4: Verify PX4 Health
+### Verify PX4 Health
 
-Inside PX4 console:
+Inside PX4:
 
-```bash
 commander check
-```
 
 Expected:
 
-```text
 Preflight check: OK
-```
 
-Test arming:
+Test Arm:
 
-```bash
 commander arm
-```
 
-Test takeoff:
+Test Takeoff:
 
-```bash
 commander takeoff
-```
 
-Drone should rise.
+Test Landing:
 
-Test landing:
-
-```bash
 commander land
-```
-
-Drone should land.
 
 If all commands work, PX4 is healthy.
 
 ---
 
-# Step 5: Load ROS2 Workspace
+### Terminal 3
 
-Terminal 3
+Load ROS2 Workspace
 
-```bash
 source /opt/ros/jazzy/setup.bash
 
 source ~/px4_ros_ws/install/setup.bash
-```
 
-Verify PX4 topics:
+Verify DDS Topics:
 
-```bash
 ros2 topic list | grep fmu
-```
 
-Expected:
+Expected Topics:
 
-```text
 /fmu/in/offboard_control_mode
 /fmu/in/trajectory_setpoint
 /fmu/in/vehicle_command
-...
-```
+/fmu/out/vehicle_status_v4
+/fmu/out/vehicle_odometry
 
 ---
 
-# Step 6: Verify Offboard Communication
+## Verify Offboard Communication
 
-Inside PX4 console:
+Inside PX4:
 
-```bash
 listener vehicle_status
-```
 
 Expected:
 
-```text
 accepts_offboard_setpoints: True
-```
 
-This confirms PX4 accepts commands from ROS2.
-
----
-
-# Step 7: Keyboard Control Node
-
-File:
-
-```text
-~/px4_ros_ws/src/drone_keyboard/drone_keyboard/keyboard_control.py
-```
-
-Code:
-
-```python
-import rclpy
-from rclpy.node import Node
-
-from px4_msgs.msg import (
-    OffboardControlMode,
-    TrajectorySetpoint,
-    VehicleCommand
-)
-
-import threading
-
-class KeyboardControl(Node):
-
-    def __init__(self):
-
-        super().__init__('keyboard_control')
-
-        self.offboard_pub = self.create_publisher(
-            OffboardControlMode,
-            '/fmu/in/offboard_control_mode',
-            10)
-
-        self.traj_pub = self.create_publisher(
-            TrajectorySetpoint,
-            '/fmu/in/trajectory_setpoint',
-            10)
-
-        self.cmd_pub = self.create_publisher(
-            VehicleCommand,
-            '/fmu/in/vehicle_command',
-            10)
-
-        self.x = 0.0
-        self.y = 0.0
-        self.z = -3.0
-        self.yaw = 0.0
-
-        self.counter = 0
-
-        self.timer = self.create_timer(
-            0.05,
-            self.publish_setpoint)
-
-    def publish_setpoint(self):
-
-        offboard = OffboardControlMode()
-        offboard.position = True
-
-        self.offboard_pub.publish(offboard)
-
-        traj = TrajectorySetpoint()
-        traj.position = [
-            self.x,
-            self.y,
-            self.z
-        ]
-        traj.yaw = self.yaw
-
-        self.traj_pub.publish(traj)
-
-        if self.counter == 20:
-            self.arm()
-            self.offboard()
-
-        self.counter += 1
-
-    def arm(self):
-
-        msg = VehicleCommand()
-
-        msg.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
-        msg.param1 = 1.0
-
-        self.cmd_pub.publish(msg)
-
-    def offboard(self):
-
-        msg = VehicleCommand()
-
-        msg.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
-        msg.param1 = 1.0
-        msg.param2 = 6.0
-
-        self.cmd_pub.publish(msg)
-
-def keyboard_thread(node):
-
-    print("\nControls")
-    print("W Forward")
-    print("S Backward")
-    print("A Left")
-    print("D Right")
-    print("Q Up")
-    print("E Down")
-    print("X Exit")
-
-    while True:
-
-        key = input("Key: ").lower()
-
-        if key == 'w':
-            node.x += 2.5
-
-        elif key == 's':
-            node.x -= 2.5
-
-        elif key == 'a':
-            node.y += 2.5
-
-        elif key == 'd':
-            node.y -= 2.5
-
-        elif key == 'q':
-            node.z -= 2.5
-
-        elif key == 'e':
-            node.z += 2.5
-
-        elif key == 'x':
-            break
-
-        print(
-            f"Target -> X:{node.x} "
-            f"Y:{node.y} "
-            f"Z:{node.z}"
-        )
-
-def main():
-
-    rclpy.init()
-
-    node = KeyboardControl()
-
-    thread = threading.Thread(
-        target=keyboard_thread,
-        args=(node,),
-        daemon=True)
-
-    thread.start()
-
-    rclpy.spin(node)
-
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-```
+This confirms PX4 is receiving ROS2 commands.
 
 ---
 
-# Step 8: Build Package
+## Running Keyboard Controller
 
-```bash
-cd ~/px4_ros_ws
-
-colcon build --packages-select drone_keyboard --symlink-install
-```
-
----
-
-# Step 9: Source Workspace
-
-```bash
 source /opt/ros/jazzy/setup.bash
 
 source ~/px4_ros_ws/install/setup.bash
-```
 
----
-
-# Step 10: Run Keyboard Controller
-
-```bash
 ros2 run drone_keyboard keyboard_control
-```
 
 ---
 
-# Keyboard Commands
+## Keyboard Commands
 
-| Key | Action              |
-| --- | ------------------- |
-| W   | Move Forward 2.5 m  |
-| S   | Move Backward 2.5 m |
-| A   | Move Left 2.5 m     |
-| D   | Move Right 2.5 m    |
-| Q   | Move Up 2.5 m       |
-| E   | Move Down 2.5 m     |
-| X   | Exit                |
+W → Move Forward
 
----
+S → Move Backward
 
-# Expected Output
+A → Move Left
 
-```text
-Controls
+D → Move Right
 
-W Forward
-S Backward
-A Left
-D Right
-Q Up
-E Down
-X Exit
+Q → Move Up
+
+E → Move Down
+
+X → Exit
+
+Example:
 
 Key: W
 
 Target -> X:2.5 Y:0.0 Z:-3.0
-```
+
+The target position is updated and continuously published to PX4 through ROS2.
 
 ---
 
-# Learning Outcomes
+## How It Works
 
-After completing this project you will understand:
+The keyboard node continuously publishes:
 
-* PX4 SITL Simulation
-* Gazebo Harmonic Integration
-* ROS2 Jazzy Communication
-* DDS Middleware
-* Offboard Control
+1. OffboardControlMode
+
+Enables PX4 Offboard mode.
+
+2. TrajectorySetpoint
+
+Contains desired drone position:
+
+X coordinate
+
+Y coordinate
+
+Z coordinate
+
+Yaw angle
+
+3. VehicleCommand
+
+Used to:
+
+Arm the drone
+
+Switch PX4 into Offboard Mode
+
+When a keyboard key is pressed:
+
+W increases X position
+
+S decreases X position
+
+A increases Y position
+
+D decreases Y position
+
+Q decreases Z position (move up)
+
+E increases Z position (move down)
+
+The updated setpoint is then sent to PX4, which moves the drone toward the requested location.
+
+---
+
+## Learning Outcomes
+
+After completing this project, the following concepts are understood:
+
+* ROS2 Node Development
+* PX4 Offboard Control
+* Gazebo Harmonic Simulation
+* DDS Communication
 * Drone Teleoperation
-* Position Setpoints
-* Real-Time Flight Control
+* Position Setpoint Control
+* Autonomous Systems Architecture
+* Robotics Software Integration
 
 ---
 
-# Author
+## Future Improvements
+
+* Real-time keyboard control without pressing Enter
+* Camera integration
+* LiDAR integration
+* Obstacle avoidance
+* Waypoint navigation
+* Autonomous mission planning
+* Construction monitoring use case
+* 3D mapping
+
+---
+
+## Author
 
 Vikas Kolhe
 
-STEM Innovation Engineer | Robotics and Embedded Systems Enthusiast
+STEM Innovation Engineer
 
-Specializing in ROS2, PX4, Autonomous Systems, Embedded Electronics, and AI Robotics.
+Robotics, ROS2, PX4, Embedded Systems and Autonomous Systems Enthusiast
